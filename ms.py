@@ -197,7 +197,7 @@ def ms_gpu_optimized(
     rshift2 = (max_shift / gstep) ** 2
 
     # execute
-    threads_per_block = 128  # smaller is faster?
+    threads_per_block = 512  # smaller is faster?
     blocks_per_grid = (cnt + threads_per_block - 1) // threads_per_block
    
     _shift_kernel_optimized(
