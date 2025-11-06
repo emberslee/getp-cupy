@@ -176,7 +176,7 @@ def ms_gpu_optimized(
     cnt = len(coord)
     grid_flat = grid_gpu.reshape(-1)
     
-    print(f"# Grids to be shifted: {cnt}")
+    print(f"# Grids to be shifted = {cnt}")
     
     # data preparation
     coord_flat = cp.zeros(cnt * 3, dtype=cp.float32)
@@ -231,10 +231,11 @@ def ms_gpu_optimized(
     point.density = dens
  
     t1 = time.time() 
-    print(f"# Time consumption = {t1 - t0:.4f}s")
+    print(f"# Time consumption = {t1 - t0:.4f}")
 
 
 def merge(coord, dens, d=1.0):
+    t0 = time.time()
 
     n = len(coord)
     if n == 0:
@@ -259,7 +260,9 @@ def merge(coord, dens, d=1.0):
 
         n_round += 1
 
-    print("# Num of round = {}".format(n_round))
+    t1 = time.time()
+
+    print("# Num of round = {} time consumption = {:.4f}".format(n_round, t1 - t0))
 
     return coord[kept], dens[kept]
  
