@@ -12,3 +12,16 @@ def write_xyz(filename, coords):
             )
 
 
+def write_pdb(filename, coords, bfactor=None):
+    with open(filename, "w") as f:
+        for i, coord in enumerate(coords):
+            f.write(
+                "ATOM  {:>5d}  CA  ALA A{:>4d}    {:8.3f}{:8.3f}{:8.3f}  1.00100.00\n".format(
+                    i + 1,
+                    i + 1,
+                    coord[0],
+                    coord[1],
+                    coord[2],
+                )
+            )
+            f.write("TER\n")

@@ -3,6 +3,7 @@ from dataclasses import dataclass
 
 import numpy as np
 import cupy as cp
+from scipy.spatial import KDTree
 
 @dataclass
 class MRC:
@@ -227,16 +228,45 @@ def ms_gpu_optimized(
     dens = cp.asnumpy(dens_gpu)
     
     point.coord = coord
-    point.dens = dens
-  
+    point.density = dens
  
     t1 = time.time() 
     print(f"# Time consumption = {t1 - t0:.4f}s")
 
 
+def merge(coord, dens, d=1.0):
+
+    n = len(coord)
+    if n == 0:
+        return
+ 
+    # construct tree
+    tree = KDTree(coord)
+    
+    sorted_indices = np.argsort(dens)[::-1]
+    kept = np.ones(n, dtype=bool)
+   
+    n_round = 0 
+    for i in sorted_indices:
+        if not kept[i]:
+            continue
+            
+        neighbors = tree.query_ball_point([coord[i]], r=d)[0]
+        neighbors = np.asarray(neighbors).astype(np.int32)
+        neighbors = neighbors[neighbors != i]
+
+        kept[neighbors] = False
+
+        n_round += 1
+
+    print("# Num of round = {}".format(n_round))
+
+    return coord[kept], dens[kept]
+ 
+
 if __name__ == "__main__":
     from mrcio import read_mrc
-    from xyzio import write_xyz
+    from xyzio import write_xyz, write_pdb
     import sys
 
     grid, origin, voxel_size = read_mrc(sys.argv[1], False)
@@ -252,11 +282,18 @@ if __name__ == "__main__":
         point, 
         resol=6.0, 
         max_shift=10.0,
-        threshold=0.3, 
+        threshold=0.1, 
     )
 
+    coord, dens = merge(point.coord, point.density, 2.5)
+    point.coord = coord
+    point.dens = dens
 
     write_xyz(
         "temp.xyz",
+        point.coord, 
+    )
+    write_pdb(
+        "temp.pdb",
         point.coord, 
     )
