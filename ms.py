@@ -34,11 +34,11 @@ void shift_kernel_optimized(
     float* status,        // (n, ) status
 
     // other constants
-    float fmaxd, 
-    float k, 
-    float rshift2,
-    int cnt, 
-    int max_iter
+    const float fmaxd, 
+    const float k, 
+    const float rshift2,
+    const int cnt, 
+    const int max_iter
 )
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
