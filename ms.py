@@ -31,14 +31,14 @@ void shift_kernel_optimized(
     // coords of grids
     float* coord,         // (n, 3) shifted coords of grids as 1D array
     float* dens,          // (n, ) density of shifted coords of grids as 1D array
-    int* shift,           // (n, ) shift iterations
+    float* status,        // (n, ) status
 
     // other constants
-    const float fmaxd, 
-    const float k, 
-    const float rshift2,
-    const int cnt, 
-    const int max_iter
+    float fmaxd, 
+    float k, 
+    float rshift2,
+    int cnt, 
+    int max_iter
 )
 {
     int i = blockIdx.x * blockDim.x + threadIdx.x;
@@ -51,6 +51,8 @@ void shift_kernel_optimized(
     int converged = 0;
     float dtotal = 0.0;
 
+    float statu = 0.0;
+
     while (nshift < max_iter && !converged){
         nshift++;
 
@@ -62,9 +64,11 @@ void shift_kernel_optimized(
         int endp_x = min(__float2int_ru(pos.x + fmaxd + 1), n2);
         int endp_y = min(__float2int_ru(pos.y + fmaxd + 1), n1);
         int endp_z = min(__float2int_ru(pos.z + fmaxd + 1), n0);
-        
+       
+        // each round reset dtotal
+        dtotal = 0.0;
         float3 pos2 = {0.0, 0.0, 0.0};
-        
+       
         // optimized loops: change of loop order for better data locality
         for (int zp = stp_z; zp < endp_z; zp++) {
             float rz = (zp - pos.z) * (zp - pos.z);
@@ -85,8 +89,9 @@ void shift_kernel_optimized(
                     // 0 1 0 -> n2
 
                     float density_val = grid[index];
+
                     float v = exp(k * d2) * density_val;
-                    
+ 
                     dtotal += v;
                     pos2.x += v * xp;
                     pos2.y += v * yp;
@@ -94,9 +99,9 @@ void shift_kernel_optimized(
                 }
             }
         }
-        
-        if (dtotal <= 1e-6) break;
-                
+       
+        if (dtotal < 1e-6) break;
+      
         // update position
         pos2.x /= dtotal;
         pos2.y /= dtotal;
@@ -107,7 +112,7 @@ void shift_kernel_optimized(
         float dy = pos.y - pos2.y;
         float dz = pos.z - pos2.z;
         double delta2 = dx * dx + dy * dy + dz * dz;
-        
+       
         if (delta2 < 1e-2) converged = 1;
 
         // max shift check
@@ -126,7 +131,7 @@ void shift_kernel_optimized(
     coord[i * 3 + 1] = pos.y;
     coord[i * 3 + 2] = pos.z;
     dens[i] = dtotal;
-    shift[i] = nshift;
+    status[i] = nshift;
 }
 '''
 
@@ -176,11 +181,10 @@ def ms_gpu_optimized(
     coord_flat = cp.zeros(cnt * 3, dtype=cp.float32)
     coord_flat[0::3] = coord[:, 0].astype(cp.float32) # all x coord
     coord_flat[1::3] = coord[:, 1].astype(cp.float32) # all y coord
-    coord_flat[2::3] = coord[:, 2].astype(cp.float32) # all y coord
+    coord_flat[2::3] = coord[:, 2].astype(cp.float32) # all z coord
 
     dens_gpu = cp.zeros(cnt, dtype=cp.float32)
-    
-    shift = cp.zeros(cnt, dtype=cp.int32)
+    shift = cp.zeros(cnt, dtype=cp.float32)
 
     # params calculation
     dreso = get_dreso(resol)
@@ -190,11 +194,11 @@ def ms_gpu_optimized(
     k = -1.5 / fs
     fmaxd = (dreso / gstep) * 2.0
     rshift2 = (max_shift / gstep) ** 2
-    
+
     # execute
-    threads_per_block = 128  # smaller is better?
+    threads_per_block = 128  # smaller is faster?
     blocks_per_grid = (cnt + threads_per_block - 1) // threads_per_block
-    
+   
     _shift_kernel_optimized(
         (blocks_per_grid,), 
         (threads_per_block,),
@@ -203,12 +207,14 @@ def ms_gpu_optimized(
             n0, 
             n1, 
             n2,
+
             coord_flat, 
             dens_gpu, 
             shift,
-            fmaxd, 
-            k, 
-            rshift2, 
+
+            np.float32(fmaxd), 
+            np.float32(k), 
+            np.float32(rshift2), 
             cnt, 
             5000,
         ),
@@ -217,9 +223,13 @@ def ms_gpu_optimized(
     cp.cuda.Stream.null.synchronize()
     
     # update result
-    point.coord = cp.asnumpy(coord_flat.reshape(cnt, 3))
-    point.dens = cp.asnumpy(dens_gpu)
-   
+    coord = cp.asnumpy(coord_flat.reshape(cnt, 3)) * mrc.voxel_size + mrc.origin
+    dens = cp.asnumpy(dens_gpu)
+    
+    point.coord = coord
+    point.dens = dens
+  
+ 
     t1 = time.time() 
     print(f"# Time consumption = {t1 - t0:.4f}s")
 
